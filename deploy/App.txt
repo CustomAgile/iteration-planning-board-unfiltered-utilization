@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Iteration Planning Board (Unfiltered Utilization)</title>
+    <!--  (c) 2015 Rally Software Development Corp.  All Rights Reserved. -->
+    <!--  Build Date: Tue Dec 29 2015 11:57:25 GMT-0700 (MST) -->
+    
+    <script type="text/javascript">
+        var APP_BUILD_DATE = "Tue Dec 29 2015 11:57:25 GMT-0700 (MST)";
+        var CHECKSUM = 5696445107;
+    </script>
+    
+    <script type="text/javascript" src="/apps/2.0/sdk.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function() {
+             
+/**
+ * A link that pops up a version dialog box
+ */
+
+Ext.define('Rally.technicalservices.InfoLink',{
+    extend: 'Rally.ui.dialog.Dialog',
+    alias: 'widget.tsinfolink',
+    
+    /**
+     * @cfg {String} informationHtml
+     * Additional text to be displayed on the popup dialog (for exmaple,
+     * to add a description of the app's use or functionality)
+     */
+    informationHtml: null,
+    
+    /**
+     * 
+     * cfg {String} title
+     * The title for the dialog box
+     */
+    title: "Build Information",
+    
+    defaults: { padding: 5, margin: 5 },
+
+    closable: true,
+     
+    draggable: true,
+
+    autoShow: true,
+   
+    width: 350, 
+    
+    initComponent: function() {
+        var id = Ext.id(this);
+        this.title =  "<span class='icon-help'> </span>" + this.title;
+        this.callParent(arguments);
+    },
+    
+    _generateChecksum: function(string){
+        var chk = 0x12345678,
+            i;
+        string = string.replace(/var CHECKSUM = .*;/,"");
+        string = string.replace(/\s/g,"");  //Remove all whitespace from the string.
+        
+        for (i = 0; i < string.length; i++) {
+            chk += (string.charCodeAt(i) * i);
+        }
+    
+        return chk;
+    },
+    
+    _checkChecksum: function(container) {
+        var deferred = Ext.create('Deft.Deferred');
+        console.log("_checkChecksum", container);
+        var me = this;
+        
+        Ext.Ajax.request({
+            url: document.URL,
+            params: {
+                id: 1
+            },
+            success: function (response) {
+                text = response.responseText;
+                if ( CHECKSUM ) {
+                    if ( CHECKSUM !== me._generateChecksum(text) ) {
+                        console.log("Checksums don't match!");
+                        deferred.resolve(false);
+                        return;
+                    }
+                }
+                deferred.resolve(true);
+            }
+        });
+        
+        return deferred.promise;
+    },
+    
+    afterRender: function() {
+        var app = Rally.getApp();
+        
+        if (! app.isExternal() ) {
+                
+            this._checkChecksum(app).then({
+                scope: this,
+                success: function(result){
+                    if ( !result ) {
+                        this.addDocked({
+                            xtype:'container',
+                            cls: 'build-info',
+                            padding: 2,
+                            html:'<span class="icon-warning"> </span>Checksums do not match'
+                        });
+                    }
+                },
+                failure: function(msg){
+                    console.log("oops:",msg);
+                }
+            });
+        } else {
+            this.addDocked({
+                xtype:'container',
+                cls: 'build-info',
+                padding: 2,
+                html:'... Running externally'
+            });
+        }
+        this.callParent(arguments);
+    },
+    
+    beforeRender: function() {
+        var me = this;
+        this.callParent(arguments);
+
+        if (this.informationHtml) {
+            this.addDocked({
+                xtype: 'component',
+                componentCls: 'intro-panel',
+                padding: 2,
+                html: this.informationHtml
+            });
+        }
+        
+        this.addDocked({
+            xtype:'container',
+            cls: 'build-info',
+            padding: 2,
+            html:"This app was created by the Rally Technical Services Team."
+        });
+        
+        if ( APP_BUILD_DATE ) {
+            this.addDocked({
+                xtype:'container',
+                cls: 'build-info',
+                padding: 2,
+                html:'Build date/time: ' + APP_BUILD_DATE
+            });
+        }
+    }
+});
+
+/*
+ */
+Ext.define('Rally.technicalservices.Logger',{
+    constructor: function(config){
+        Ext.apply(this,config);
+    },
+    log: function(args){
+        var timestamp = "[ " + Ext.util.Format.date(new Date(), "Y-m-d H:i:s.u") + " ]";
+        //var output_args = arguments;
+        //output_args.unshift( [ "[ " + timestamp + " ]" ] );
+        //output_args = Ext.Array.push(output_args,arguments);
+        
+        var output_args = [];
+        output_args = Ext.Array.push(output_args,[timestamp]);
+        output_args = Ext.Array.push(output_args, Ext.Array.slice(arguments,0));
+
+        window.console && console.log.apply(console,output_args);
+    }
+
+});
+
+Ext.define("iteration-planning-board-unfiltered-utilization", {
+        extend: 'Rally.app.App',
+        requires: [
+            'Rally.ui.gridboard.planning.TimeboxGridBoard',
+            'Rally.ui.gridboard.plugin.GridBoardAddNew',
+            'Rally.ui.gridboard.plugin.GridBoardManageIterations',
+            'Rally.ui.gridboard.plugin.GridBoardCustomFilterControl'
+        ],
+        mixins: ['Rally.app.CardFieldSelectable'],
+        modelNames: ['User Story', 'Defect'],
+
+        config: {
+            defaultSettings: {
+                cardFields: 'Parent,Tasks,Defects,Discussion,PlanEstimate'
+            }
+        },
+
+        launch: function() {
+            var context = this.getContext(),
+                plugins = [
+                    {
+                        ptype: 'rallygridboardaddnew',
+                        rankScope: 'BACKLOG',
+                        addNewControlConfig: {
+                            stateful: true,
+                            stateId: context.getScopedStateId('iteration-planning-add-new')
+                        }
+                    },
+                    {
+                        ptype: 'rallygridboardcustomfiltercontrol',
+                        filterControlConfig: {
+                            margin: '3 9 3 30',
+                            blackListFields: ['Iteration', 'PortfolioItem'],
+                            modelNames: this.modelNames,
+                            stateful: true,
+                            stateId: context.getScopedStateId('iteration-planning-custom-filter-button')
+                        },
+                        showOwnerFilter: true,
+                        ownerFilterControlConfig: {
+                            stateful: true,
+                            stateId: context.getScopedStateId('iteration-planning-owner-filter')
+                        }
+                    }
+                ];
+
+            if (context.getSubscription().isHsEdition() || context.getSubscription().isExpressEdition()) {
+                plugins.push('rallygridboardmanageiterations');
+            }
+
+            this.gridboard = this.add({
+                xtype: 'rallytimeboxgridboard',
+                context: context,
+                modelNames: this.modelNames,
+                timeboxType: 'Iteration',
+                plugins: plugins,
+                cardBoardConfig: {
+                    cardConfig: {
+                        fields:  this.getCardFieldNames()
+                    },
+                    columnConfig: {
+                        additionalFetchFields: ['PortfolioItem']
+                    },
+                    listeners: {
+                        filter: this._onBoardFilter,
+                        filtercomplete: this._onBoardFilterComplete,
+                        scope: this
+                    }
+                },
+                listeners: {
+                    load: this._onLoad,
+                    toggle: this._publishContentUpdated,
+                    recordupdate: this._publishContentUpdatedNoDashboardLayout,
+                    recordcreate: this._publishContentUpdatedNoDashboardLayout,
+                    preferencesaved: this._publishPreferenceSaved,
+                    scope: this
+                }
+            });
+        },
+
+        getSettingsFields: function () {
+            var fields = this.callParent(arguments);
+            this.appendCardFieldPickerSetting(fields);
+            return fields;
+        },
+
+        _onLoad: function() {
+            this._publishContentUpdated();
+            if (Rally.BrowserTest) {
+                Rally.BrowserTest.publishComponentReady(this);
+            }
+        },
+
+        _onBoardFilter: function() {
+            this.setLoading(true);
+        },
+
+        _onBoardFilterComplete: function() {
+            this.setLoading(false);
+        },
+
+        _publishContentUpdated: function() {
+            this.fireEvent('contentupdated');
+        },
+
+        _publishContentUpdatedNoDashboardLayout: function() {
+            this.fireEvent('contentupdated', {dashboardLayout: false});
+        },
+
+        _publishPreferenceSaved: function(record) {
+            this.fireEvent('preferencesaved', record);
+        }
+    });
+(function() {
+    var Ext = window.Ext4 || window.Ext;
+
+    /**
+     * @private
+     */
+    Ext.override(Rally.ui.gridboard.planning.TimeboxColumn, {
+
+            /**
+             * @cfg {Object} columnStatusConfig
+             * A config object that will be applied to the column's status area (between the header and content cells).
+             * Used here for the progress bar.
+             */
+            columnStatusConfig: {
+                xtype: 'rallytimeboxcolumnprogressbar',
+                pointField: 'PlanEstimate',
+                pointTotal: null
+            },
+
+           initComponent: function() {
+            this.additionalFetchFields = _(this.additionalFetchFields || []).concat(
+                _.first(this.columnStatusConfig.pointField.split('.'))
+            ).unique().value();
+
+            this.callParent(arguments);
+
+            this.on({
+                beforecarddroppedsave:  this._onBeforeCardDrop,
+                addcard:                this._updateColumnStatus,
+                load:                   this._updateColumnStatus,
+                removecard:             this._updateColumnStatus,
+                cardupdated:            this._updateColumnStatus,
+                afterrender: {
+                    fn: this._addPlanningClasses,
+                    single: true
+                },
+                scope: this
+            });
+
+            this._loadUnfilteredStore();
+
+        },
+        _loadUnfilteredStore: function(){
+            var filter = this.getStoreFilter(),
+                pointField = this.columnStatusConfig.pointField,
+                context = this.context.getDataContext();
+
+            var store =  Ext.create('Rally.data.wsapi.artifact.Store', {
+                models: ['HierarchicalRequirement','Defect'],
+                filters: filter,
+                context: context,
+                fetch: [pointField]
+            });
+            store.load({
+                callback: function(records, operation){
+                    //console.log('_loadUnfilteredStore callback', operation, records);
+                    if (operation.wasSuccessful()){
+                        var totalPoints = 0;
+
+                        _.each(records, function(r){
+                            totalPoints += r.get(pointField) || 0;
+                        });
+                    } else {
+                        totalPoints = -1;
+                        Rally.ui.notify.Notifier.showError({message: "Error fetching capacity total for unfiltered values."});
+                    }
+                    this.columnStatusConfig.pointTotal = totalPoints;
+                    this._updateColumnStatus();
+                },
+                scope: this
+            });
+
+
+        },
+        _updateColumnStatus: function() {
+            if(this.columnStatus) {
+                this.columnStatus.pointTotal = this.columnStatusConfig.pointTotal;  //Added to show total unfiltered points
+                this.columnStatus.update();
+            } else {
+                this.drawStatus();
+                this._updateColumnStatus();
+            }
+        }
+    });
+})();
+(function() {
+
+    var Ext = window.Ext4 || window.Ext;
+
+    /**
+     * @private
+     */
+    Ext.override(Rally.ui.gridboard.planning.TimeboxColumnProgressBar, {
+        pointTotal: undefined,
+        allowEdit: false,
+        _getTotalPointCount: function() {
+            if (this.pointTotal){
+                return this.pointTotal;
+            }
+
+            return _.reduce(this._getColumn().getCards(), function(memo, card) {
+                var points = this._getRecordValue(card.getRecord(), this.pointField);
+                return Ext.isNumber(points) ? memo + points : memo;
+            }, 0, this);
+        },
+        _showEditIcon: function() {
+           if (this.allowEdit){
+               this.getEl().down('.icon-edit').show();
+           }
+        },
+        _createTooltip: function(){
+            if (!this.allowEdit){
+                return;
+            }
+
+            if (this.tooltip) {
+                this._destroyTooltip();
+            }
+
+            this.tooltip = Ext.create('Rally.ui.tooltip.ToolTip', {
+                cls: 'set-planned-velocity-tooltip',
+                bodyStyle: 'text-align: center;',
+                width: 150,
+                anchor: 'top',
+                target: this._getProgressBarContainer(),
+                html: 'Edit Planned Velocity'
+            });
+        },
+        _onPlannedVelocityLinkClick: function(event) {
+            event.preventDefault();
+
+          if (this.allowEdit){
+              this._disableTooltip();
+              this._createPopoverWithData();
+          }
+
+        }
+    });
+})();
+(function() {
+    var Ext = window.Ext4 || window.Ext;
+
+    /**
+     * The Ext.XTemplate used to render the percent done of a timebox, like a iteration, release, or generic timeframe.
+     */
+    Ext.override(Rally.ui.renderer.template.progressbar.TimeboxProgressBarTemplate, {
+
+        template: [
+            '<tpl if="this.shouldShowPercentDone(values)">',
+            '<div style="{[this.getOffsetDimensions()]}"></div>',
+            '<div class="progress-bar-container field-{[this.percentDoneName]} {[this.getClickableClass()]} {[this.getContainerClass(values)]}" style="{[this.getDimensionStyle()]}">',
+            '<div class="rly-progress-bar" style="background-color: {[this.calculateColorFn(values)]}; width: {[this.calculateWidth(values)]}; "></div>',
+            '<tpl if="this.showDangerNotificationFn(values)">',
+            '<div class="progress-bar-danger-notification"></div>',
+            '</tpl>',
+            '<div class="progress-bar-label">',
+            '{[this.generateAmountCompleteText(values)]}',
+            ' of ',
+            '{[this.generateTotalPlannedVelocityText(values)]}',
+            ' {[this.generateChildrenTotalVelocityText(values)]} ',
+            '<span class="icon-edit" style="position:relative; top: 1px;"></span>',
+            '</div>',
+            '</div>',
+            '<div style="{[this.getOffsetDimensions()]}">',
+            '<span class="progressbar-percentage">{[this.calculatePercent(values)]}%</span>',
+            '</div>',
+            '</tpl>'
+        ],
+
+        config: {
+            generateTotalPlannedVelocityText: function(recordData) {
+                // The progressbar links to "Set Planned Velocity" if there is no planned velocity for the current
+                // project and iteration (the "parent"), so we check that even though the total is what gets displayed.
+                return (recordData.total) ? Ext.util.Format.round(recordData.total, 2) : '--';
+            }
+        }
+    });
+})();
+            
+               Rally.launchApp('iteration-planning-board-unfiltered-utilization', {
+                   name: 'Iteration Planning Board (Unfiltered Utilization)'
+               });
+        });
+    </script>
+    
+    <style type="text/css">
+
+.app {
+}
+.tsinfolink {
+    position:absolute;
+    right:0px;
+    width: 14px;
+    height: 14px;
+    border-radius: 7px;
+    text-align: center;
+    color: white;
+    background: #C0C0C0;
+    border-style: solid;
+    border-width: 1px;
+    margin-top: 25px;
+    margin-right: 5px;
+    cursor: pointer;
+}
+
+.planning-board .header {
+    padding: 5px 5px 5px 10px;
+}
+
+.planning-board .header .add-new {
+    float: left;
+}
+
+.planning-board .show-label {
+    float: right;
+    margin-top: 3px;
+}
+
+.planning-board .type-checkbox {
+    float: right;
+    margin: 5px;
+}
+
+.planning-board .manage-iterations {
+    float: right;
+    margin: 3px 10px 0 0;
+}
+
+.planning-board .artifact-type-chooser {
+    margin-top: 4px;
+}
+
+.planning-board .add-new label {
+    padding-top: 0;
+}
+
+.planning-board .add-new .new {
+    margin-left: 0;
+}
+
+.planning-column.backlog .search-button {
+    background: transparent url('search-button.gif');
+}
+    </style>
+
+</head>
+<body></body>
+</html>
